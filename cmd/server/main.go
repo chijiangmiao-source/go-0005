@@ -18,7 +18,7 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	store.Close()
+	defer store.Close()
 	clock := domain.RealClock{}
 	report := api.RunStartupRecovery(store, clock)
 	if !report.Ready {
