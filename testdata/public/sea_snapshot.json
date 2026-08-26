@@ -1,0 +1,18 @@
+{
+  "source": {
+    "source": "NOAA public buoy history frozen slice",
+    "version": "offline-2025-12-31",
+    "source_time": "2025-12-31T23:00:00Z"
+  },
+  "valid": {
+    "start": "2025-12-31T23:59:00Z",
+    "end": "2026-01-01T00:20:00Z"
+  },
+  "max_sample_gap": 600000000000,
+  "samples": [
+    { "at": "2026-01-01T00:00:00Z", "significant_wave_height_m": 2, "wind_speed_m_s": 9, "heave_m": 1 },
+    { "at": "2026-01-01T00:05:00Z", "significant_wave_height_m": 2, "wind_speed_m_s": 9, "heave_m": 1 },
+    { "at": "2026-01-01T00:10:00Z", "significant_wave_height_m": 2, "wind_speed_m_s": 9, "heave_m": 1 }
+  ],
+  "digest": "computed-by-service-when-registered"
+}
