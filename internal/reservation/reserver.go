@@ -70,14 +70,23 @@ func (r *Reserver) Reserve(batchID string, window domain.TimeRange, reqs []domai
 	out := BuildReservations(batchID, window, reqs)
 	for _, res := range out {
 		if err := r.store.SaveReservation(res); err != nil {
+			// 存储在写入某条预留后故障时，已写入的预留必须回滚，
+			// 否则会占用对应时间窗并导致后续重试无故收到 RESOURCE_CONFLICT。
+			r.releaseBatch(batchID)
 			return nil, nil, err
 		}
 	}
 	if err := r.faults.Check(FaultAfterReservation); err != nil {
-		if rollback, ok := r.store.(rollbackStore); ok {
-			_ = rollback.ReleaseBatchReservations(batchID)
-		}
+		r.releaseBatch(batchID)
 		return nil, nil, err
 	}
 	return out, nil, nil
+}
+
+// releaseBatch 在预留写入中途或提交前发生故障时释放该批次已写入的全部预留，
+// 确保失败申请不会遗留资源占用。
+func (r *Reserver) releaseBatch(batchID string) {
+	if rollback, ok := r.store.(rollbackStore); ok {
+		_ = rollback.ReleaseBatchReservations(batchID)
+	}
 }
