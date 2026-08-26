@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"marine-survey-payload-window-orchestrator/internal/domain"
@@ -24,13 +25,16 @@ type Scheduler struct {
 	lister  BatchLister
 	machine *Machine
 	period  time.Duration
+
+	mu       sync.Mutex
+	inflight map[string]*sync.Mutex
 }
 
 func NewScheduler(store BatchStore, lister BatchLister, clock domain.Clock, period time.Duration) *Scheduler {
 	if period <= 0 {
 		period = time.Second
 	}
-	return &Scheduler{store: store, lister: lister, machine: NewMachine(clock), period: period}
+	return &Scheduler{store: store, lister: lister, machine: NewMachine(clock), period: period, inflight: map[string]*sync.Mutex{}}
 }
 
 func (s *Scheduler) Run(ctx context.Context) {
@@ -57,7 +61,29 @@ func (s *Scheduler) Tick() []TransitionRecord {
 	return records
 }
 
+// batchMutex returns a dedicated lock for a single batch. Overlapping
+// scheduler periods (each Tick runs in its own goroutine) can otherwise
+// advance the same batch concurrently: both read the same stale state,
+// each appends a transition event, and the second UpdateBatch upserts over
+// the same Version, leaving two events against a single version bump.
+// Serializing per batch keeps the background cycle from advancing the same
+// batch twice in parallel while still allowing distinct batches to advance
+// concurrently.
+func (s *Scheduler) batchMutex(batchID string) *sync.Mutex {
+	s.mu.Lock()
+	mu, ok := s.inflight[batchID]
+	if !ok {
+		mu = &sync.Mutex{}
+		s.inflight[batchID] = mu
+	}
+	s.mu.Unlock()
+	return mu
+}
+
 func (s *Scheduler) AdvanceBatch(batchID string) (TransitionRecord, bool) {
+	mu := s.batchMutex(batchID)
+	mu.Lock()
+	defer mu.Unlock()
 	batch, ok := s.store.GetBatch(batchID)
 	if !ok || batch.State.Terminal() {
 		return TransitionRecord{}, false
