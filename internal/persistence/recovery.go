@@ -54,14 +54,14 @@ func (s *SQLiteStore) Recover(clock domain.Clock) RecoveryReport {
 		if !changed {
 			continue
 		}
-		if reason == "WINDOW_END" {
-			next.FinalManifestDigest, _ = domain.FinalManifestDigest(next, s.eventsAfterLocked(next.ID, 0), live)
-		}
 		event, err := s.appendEventLocked(batch.ID, "RECOVERY_"+string(next.State), map[string]string{"reason": reason}, report.CheckedAt)
 		if err != nil {
 			return s.failRecoveryLocked(report, err)
 		}
 		next.LastEventSeq = event.AggregateSeq
+		if next.State.Terminal() {
+			next.FinalManifestDigest, _ = domain.FinalManifestDigest(next, s.eventsAfterLocked(next.ID, 0), live)
+		}
 		if err := s.saveBatchLocked(next); err != nil {
 			return s.failRecoveryLocked(report, err)
 		}
