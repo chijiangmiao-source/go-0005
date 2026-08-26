@@ -26,7 +26,7 @@ func main() {
 	}
 	scheduler := execution.NewScheduler(store, store, clock, time.Second)
 	schedulerCtx, cancelScheduler := context.WithCancel(context.Background())
-	cancelScheduler()
+	defer cancelScheduler()
 	go scheduler.Run(schedulerCtx)
 	server := api.NewServer(store, clock)
 	log.Printf("marine survey payload window orchestrator listening on %s using %s", cfg.addr, cfg.db)
