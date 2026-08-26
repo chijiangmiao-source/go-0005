@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>海上测量船遥感载荷试验窗口编排服务</title>
+    <link rel="stylesheet" href="/static/styles.css">
+  </head>
+  <body>
+    <main>
+      <h1>试验窗口编排控制台</h1>
+      <section class="toolbar">
+        <button id="check">查询后端状态</button>
+        <button id="resources">读取资源容量</button>
+        <button id="sample">提交固定样例申请</button>
+        <button id="refresh" disabled>刷新当前批次</button>
+      </section>
+      <section class="grid">
+        <label>申请标识 <input id="application-id" value="browser-application-1"></label>
+        <label>批次标识 <input id="batch-id" readonly></label>
+        <label>最后事件序号 <input id="event-seq" readonly value="0"></label>
+      </section>
+      <section>
+        <pre id="output">等待操作...</pre>
+      </section>
+    </main>
+    <script type="module" src="/static/app.js"></script>
+  </body>
+</html>
