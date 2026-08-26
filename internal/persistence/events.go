@@ -59,6 +59,58 @@ func eventDigest(event domain.AuditEvent) (string, error) {
 	})
 }
 
+// stateFromEvent derives the batch state implied by an audit event type. The
+// event stream is authoritative, so during recovery the projection is rebuilt
+// by replaying these state events in aggregate_seq order.
+func stateFromEvent(eventType string) (domain.BatchState, bool) {
+	switch eventType {
+	case "BATCH_RESERVED", "RECOVERY_RESERVED", "SCHEDULE_RESERVED":
+		return domain.StateReserved, true
+	case "BATCH_RUNNING", "RECOVERY_RUNNING", "SCHEDULE_RUNNING":
+		return domain.StateRunning, true
+	case "BATCH_DEGRADED", "RECOVERY_DEGRADED", "SCHEDULE_DEGRADED":
+		return domain.StateDegraded, true
+	case "BATCH_COMPLETED", "RECOVERY_COMPLETED":
+		return domain.StateCompleted, true
+	case "BATCH_ABORTED", "RECOVERY_ABORTED", "SCHEDULE_ABORTED":
+		return domain.StateAborted, true
+	case "APPLICATION_REJECTED":
+		return domain.StateRejected, true
+	}
+	return "", false
+}
+
+// ReplayProjection rebuilds the authoritative batch state from a continuous
+// event stream. It walks the events in order, applying every state-bearing
+// event so a batch row that was left behind by a crash is brought back to the
+// state the event stream already records. Non-state events (e.g. telemetry
+// acknowledgements) are skipped. The returned bool reports whether at least one
+// state event was observed, i.e. the stream carries a projection for this
+// aggregate. The caller derives LastEventSeq from the full event slice so the
+// pointer reflects every recorded event, not only state transitions.
+func ReplayProjection(events []domain.AuditEvent) (domain.BatchState, bool) {
+	var state domain.BatchState
+	observed := false
+	for _, event := range events {
+		next, ok := stateFromEvent(event.EventType)
+		if !ok {
+			continue
+		}
+		state = next
+		observed = true
+	}
+	return state, observed
+}
+
+// lastEventSeqOf returns the aggregate_seq of the final event in a sequence
+// ordered by aggregate_seq, or 0 when the stream is empty.
+func lastEventSeqOf(events []domain.AuditEvent) int {
+	if n := len(events); n > 0 {
+		return events[n-1].AggregateSeq
+	}
+	return 0
+}
+
 func VerifyEventSequence(events []domain.AuditEvent) error {
 	previous := ""
 	for i, event := range events {

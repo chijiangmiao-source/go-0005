@@ -43,6 +43,40 @@ func (s *SQLiteStore) Recover(clock domain.Clock) RecoveryReport {
 		return s.failRecoveryLocked(report, err)
 	}
 	for _, batch := range batches {
+		// The event stream is authoritative. A crash may have persisted a
+		// state event for this batch before the batch row was updated, so the
+		// row read above can be behind the recorded events. Replay the
+		// continuous event stream to rebuild the true projection before any
+		// timed action is derived; otherwise a stale row would drive Advance
+		// to emit a duplicate or out-of-order recovery transition.
+		events, err := s.eventsLocked(batch.ID)
+		if err != nil {
+			return s.failRecoveryLocked(report, err)
+		}
+		if state, ok := ReplayProjection(events); ok {
+			if state != batch.State {
+				// The row is behind the event stream: a crash persisted a
+				// state transition event before the batch row was updated.
+				// Rebuild the true projection from the authoritative events.
+				batch.State = state
+				batch.LastEventSeq = lastEventSeqOf(events)
+				if state.Terminal() && batch.FinalManifestDigest == "" {
+					batch.FinalManifestDigest, _ = domain.FinalManifestDigest(batch, events, nil)
+				}
+				if err := s.saveBatchLocked(batch); err != nil {
+					return s.failRecoveryLocked(report, err)
+				}
+				report.BatchesAdvanced++
+			} else if lastEventSeqOf(events) > batch.LastEventSeq {
+				// The state already matches, but the row's event pointer is
+				// behind a non-state event (e.g. telemetry acknowledgement).
+				// Catch the pointer up without counting a state advance.
+				batch.LastEventSeq = lastEventSeqOf(events)
+				if err := s.saveBatchLocked(batch); err != nil {
+					return s.failRecoveryLocked(report, err)
+				}
+			}
+		}
 		if batch.State.Terminal() {
 			continue
 		}

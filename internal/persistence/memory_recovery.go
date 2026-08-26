@@ -25,16 +25,37 @@ func (s *MemoryStore) Recover(clock domain.Clock) RecoveryReport {
 			return report
 		}
 	}
-	open := make([]domain.TrialBatch, 0, len(s.batches))
+	// The event stream is authoritative. A crash may have persisted a state
+	// event before the batch row was updated, leaving the row behind the
+	// recorded events. Walk the in-memory batches under the lock, replay the
+	// continuous event stream for each, and reconcile any stale projection
+	// before timed actions are derived below.
+	reconciled := make([]domain.TrialBatch, 0, len(s.batches))
 	for _, batch := range s.batches {
-		if !batch.State.Terminal() {
-			open = append(open, batch)
+		events := append([]domain.AuditEvent(nil), s.events[batch.ID]...)
+		if state, ok := ReplayProjection(events); ok {
+			if state != batch.State {
+				batch.State = state
+				batch.LastEventSeq = lastEventSeqOf(events)
+				if state.Terminal() && batch.FinalManifestDigest == "" {
+					batch.FinalManifestDigest, _ = domain.FinalManifestDigest(batch, events, nil)
+				}
+				s.batches[batch.ID] = batch
+				report.BatchesAdvanced++
+			} else if lastEventSeqOf(events) > batch.LastEventSeq {
+				batch.LastEventSeq = lastEventSeqOf(events)
+				s.batches[batch.ID] = batch
+			}
 		}
+		reconciled = append(reconciled, batch)
 	}
 	s.mu.Unlock()
 
 	machine := execution.NewMachine(clock)
-	for _, batch := range open {
+	for _, batch := range reconciled {
+		if batch.State.Terminal() {
+			continue
+		}
 		live := s.Liveness(batch.ID)
 		next, changed, reason := machine.Advance(batch, live)
 		if !changed {
