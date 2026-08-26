@@ -87,7 +87,6 @@ func (r *Receiver) Receive(batchID string, hb domain.TelemetryHeartbeat) (domain
 		return domain.TelemetryResult{}, err
 	}
 	result := domain.TelemetryResult{Accepted: true, BatchState: batch.State, EventSeq: event.AggregateSeq}
-	r.store.SaveInbox(hb.MessageID, digest, result)
 	liveSet := r.store.Liveness(batchID)
 	next, changed, reason := r.machine.Advance(batch, liveSet)
 	if changed {
@@ -104,7 +103,11 @@ func (r *Receiver) Receive(batchID string, hb domain.TelemetryHeartbeat) (domain
 		}
 		batch = next
 	}
+	// Persist the inbox record only after the state machine has run, so the
+	// replayed result carries the same post-transition batch_state that the
+	// first response returned to the caller.
 	result.BatchState = batch.State
+	r.store.SaveInbox(hb.MessageID, digest, result)
 	return result, nil
 }
 
