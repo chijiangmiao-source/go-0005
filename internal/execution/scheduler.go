@@ -72,11 +72,11 @@ func (s *Scheduler) AdvanceBatch(batchID string) (TransitionRecord, bool) {
 		return TransitionRecord{BatchID: batchID, From: batch.State, To: batch.State, Reason: err.Error()}, false
 	}
 	next.LastEventSeq = event.AggregateSeq
-	if err := s.store.UpdateBatch(next); err != nil {
-		return TransitionRecord{BatchID: batchID, From: batch.State, To: batch.State, Reason: err.Error()}, false
-	}
 	if next.State == domain.StateCompleted || next.State == domain.StateAborted {
 		next.FinalManifestDigest, _ = domain.FinalManifestDigest(next, s.store.EventsAfter(batchID, 0), live)
+	}
+	if err := s.store.UpdateBatch(next); err != nil {
+		return TransitionRecord{BatchID: batchID, From: batch.State, To: batch.State, Reason: err.Error()}, false
 	}
 	return TransitionRecord{BatchID: batchID, From: batch.State, To: next.State, Reason: reason, EventSeq: event.AggregateSeq}, true
 }
